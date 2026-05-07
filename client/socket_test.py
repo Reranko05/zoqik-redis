@@ -10,7 +10,3 @@ while True:
         break
 
     s.send((msg + '\n').encode())
-
-    data = s.recv(8)
-
-    print("Server:", data.decode())

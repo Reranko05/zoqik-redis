@@ -39,17 +39,12 @@
 
     This is called incremental stream parsing.
 
-    While sending data back:
-    - send() may send only partial bytes
-    - so we tracked progress using totalSent
-    - buffer + totalSent ensured already-sent bytes were not resent
-    - bytesReceived - totalSent represented remaining unsent bytes
-
     Finally:
     - client sockets were cleaned up using closesocket()
     - server socket was closed
     - Winsock was cleaned up using WSACleanup()
 */
+#include "protocol/command_parser.h"
 
 #include <iostream>
 #include <winsock2.h>
@@ -198,27 +193,7 @@ int main() {
                 incomingData.erase(0, newlinePos + 1);  // keep unprocessed leftover bytes that were after newline
 
                 std::cout << "Command > " << command << '\n';
-            }
-
-            // 8. Send bytes back to client (Echo Server)
-
-            int totalSent = 0; // initialize total bytes sent
-
-            while(totalSent < bytesReceived) {  // run while total bytes sent is less than bytes recieved
-                
-                int sent = send(  // copies bytes from your application buffer to kernel TCP buffer
-                    clientSocket,
-                    buffer + totalSent,  // so that the bytes already sent are not sent again
-                    bytesReceived - totalSent,  // because remaining bytes decrease as send
-                    0
-                );
-                
-                totalSent += sent;  // increasing the totalSent as we send bytes
-
-                if (sent == SOCKET_ERROR) {  // Error handling if send fails
-                    std::cout << "Sent Failed\n";
-                    break;
-                }
+                std::vector<std::string> tokens = tokenizeCommand(command);
             }
         }
 
