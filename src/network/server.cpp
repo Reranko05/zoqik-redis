@@ -39,6 +39,27 @@
 
     This is called incremental stream parsing.
 
+    After extracting a complete command:
+    - the command was tokenized into structured arguments
+    - CommandHandler validated and mapped commands to their respective database operations
+    - Database provided persistent in-memory key-value storage
+
+    The server used a single shared Database instance,
+    allowing state persistence across multiple commands and clients.
+
+    After command execution:
+    - a response string was generated
+    - '\n' was appended as a response delimiter
+    - the response was sent back to the client
+
+    send() is not guaranteed to send all bytes at once,
+    so we used a send loop with:
+    - totalSent tracking
+    - remaining byte calculation
+    - buffer offset shifting
+
+    to ensure the complete response was transmitted reliably.
+
     Finally:
     - client sockets were cleaned up using closesocket()
     - server socket was closed
@@ -47,6 +68,8 @@
 
 #include "server.h"
 #include "../protocol/command_parser.h"
+#include "../core/command_handler.h"
+#include "../storage/database.h"
 
 #include <iostream>
 #include <winsock2.h>
@@ -59,6 +82,9 @@ void Server::start() {
     // 1. Initialise Winsock
 
     WSADATA wsaData;
+    CommandHandler commandHandler;
+    Database database;
+
 
     int wsaResult = WSAStartup(MAKEWORD(2,2), &wsaData);
 
@@ -195,7 +221,31 @@ void Server::start() {
 
                 std::cout << "Command > " << command << '\n';
                 std::vector<std::string> tokens = tokenizeCommand(command);
+
+                std::string output = commandHandler.execute(tokens, database);
+                std::cout << "Output > " << output << '\n';
+                std::string output_full = output + '\n';
+                int output_len = output_full.length();
+
+                int totalSent = 0;
+
+                while(totalSent < output_len){
+                    int sent = send(
+                        clientSocket,
+                        output_full.c_str() + totalSent,
+                        output_len - totalSent,
+                        0
+                    );
+
+                    if (sent == SOCKET_ERROR) {
+                        std::cout << "Sent Failed\n";
+                        break;
+                    }
+
+                    totalSent += sent;
+                }
             }
+
         }
 
         // Client Cleanup
