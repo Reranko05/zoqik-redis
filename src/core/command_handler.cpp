@@ -1,9 +1,17 @@
 /*
     CommandHandler maps parsed commands to their respective
-    database operations.
+    database operations or protocol responses.
 
     It validates whether the number of arguments matches
     the expected format for each command.
+
+    Commands are normalized using std::toupper()
+    so that:
+    - set
+    - SET
+    - SeT
+
+    are all treated as the same command.
 
     Example:
     "SET name A"
@@ -17,11 +25,21 @@
     DEL command maps to database.del()
     and removes the key-value pair from storage.
 
-    If the command is invalid or unsupported,
-    an error message is returned.
+    PING command does not interact with the database.
+    It is a protocol-level health check command
+    that returns "PONG".
+
+    If:
+    - the command does not exist
+    - the number of arguments is invalid
+
+    then an error response is returned.
 */
 
 #include "command_handler.h"
+
+#include <algorithm>
+#include <cctype>
 
 std::string CommandHandler::execute(
     const std::vector<std::string>& tokens,
@@ -34,6 +52,9 @@ std::string CommandHandler::execute(
     }
 
     std::string command = tokens[0];
+
+    std::transform(command.begin(), command.end(), command.begin(),
+                    [](unsigned char c){return std::toupper(c); });
     
     if (command == "SET") {
         if (args == 3) {
@@ -41,7 +62,7 @@ std::string CommandHandler::execute(
             return "Key Added Successfully";
         }
         else {
-            return "Invalid Number of Args";
+            return "[ERROR] wrong number of arguments for SET";
         }
     }
 
@@ -51,7 +72,7 @@ std::string CommandHandler::execute(
             return value;
         }
         else {
-            return "Invalid Number of Args";
+            return "[ERROR] wrong number of arguments for GET";
         }
     }
 
@@ -61,11 +82,20 @@ std::string CommandHandler::execute(
             return "Key Deleted Successfully";
         }
         else {
-            return "Invalid Number of Args";
+            return "[ERROR] wrong number of arguments for DEL";
+        }
+    }
+
+    else if (command == "PING") {
+        if (args == 1) {
+            return "PONG";
+        }
+        else {
+            return "[ERROR] wrong number of arguments for PING";
         }
     }
 
     else {
-        return "Invalid Command";
+        return "[ERROR] command does not exist";
     }
 }
