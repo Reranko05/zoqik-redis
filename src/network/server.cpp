@@ -305,103 +305,104 @@ void Server::start() {
 
             incomingData.append(buffer, bytesReceived);  // append exact received bytes into incomingData string
 
-            int args = 0;
-            int remaining_lines;
-            int byte_count = 0;
-            if (incomingData.empty()) {
-                std::cout << "[ERROR] no command found";
-                break;
-            }
-            if (incomingData[0] == '*') {
-                int i = 0;
-                while (i < incomingData.size() && incomingData[i] != '\r') {
-                    i++;
+            while (true) {
+
+                int args = 0;
+                int remaining_lines;
+                int byte_count = 0;
+                if (incomingData.empty()) {
+                    break;
                 }
-                if (i == incomingData.size()) {
-                    std::cout << "[ERROR] end not found";
-                    continue;
+                if (incomingData[0] == '*') {
+                    int i = 0;
+                    while (i < incomingData.size() && incomingData[i] != '\r') {
+                        i++;
+                    }
+                    if (i == incomingData.size()) {
+                        std::cout << "[ERROR] end not found";
+                        continue;
+                    }
+                    if (incomingData[i] == '\r') {
+                        args = std::stoi(incomingData.substr(1,i-1));
+                    }
                 }
-                if (incomingData[i] == '\r') {
-                    args = std::stoi(incomingData.substr(1,i-1));
+
+                remaining_lines = 1 + args*2;
+
+                while (remaining_lines > 0 && byte_count < incomingData.size()) {
+                    if (incomingData[byte_count] == '\n') {
+                        remaining_lines--;
+                    }
+                    byte_count++;
                 }
-            }
+                
+                if (remaining_lines != 0) break;
+                
 
-            remaining_lines = 1 + args*2;
+                std::string full_input(incomingData.substr(0,byte_count));
+                incomingData.erase(0,byte_count);
+                std::vector<std::string> tokens = parseRESP(full_input);
 
-            while (remaining_lines > 0 && byte_count < incomingData.size()) {
-                if (incomingData[byte_count] == '\n') {
-                    remaining_lines--;
-                }
-                byte_count++;
-            }
-            
-            if (remaining_lines != 0) continue;
-            
-
-            std::string full_input(incomingData.substr(0,byte_count));
-            incomingData.erase(0,byte_count);
-            std::vector<std::string> tokens = parseRESP(full_input);
-
-            if (tokens.empty()) {
-                std::cout << "[ERROR] no command found";
-                break;
-            }
-
-            std::string output = commandHandler.execute(tokens, database);
-            std::cout << "Output > " << output << "\r\n";
-
-            std::string command = tokens[0];
-
-            std::transform(command.begin(), command.end(), command.begin(),
-                            [](unsigned char c){return std::toupper(c); });
-            
-            std::string encoded_output;
-
-
-            if (command != "GET" && output.rfind("[ERROR]",0) == 0) {
-                    encoded_output = encodeError(output);
-            }
-            else if (command == "GET") {
-                if (output == "[ERROR] key not found") {
-                    encoded_output = encodeNil();
-                }
-                else if (output.rfind("[ERROR]",0) == 0) {
-                    encoded_output = encodeError(output);
-                }
-                else {
-                    encoded_output = encodeBulkString(output);
-                }
-            }
-            else {
-                encoded_output = encodeSimpleString(output);
-            }
-
-
-            std::string output_full = encoded_output;
-            int output_len = output_full.length();
-
-            int totalSent = 0;
-
-            while(totalSent < output_len){
-                int sent = send(
-                clientSocket,
-                    output_full.c_str() + totalSent,
-                    output_len - totalSent,
-                    0
-                );
-
-                if (sent == SOCKET_ERROR) {
-                    std::cout << "Sent Failed\n";
+                if (tokens.empty()) {
+                    std::cout << "[ERROR] no command found";
                     break;
                 }
 
-                totalSent += sent;
+                std::string output = commandHandler.execute(tokens, database);
+                std::cout << "Output > " << output << "\r\n";
+
+                std::string command = tokens[0];
+
+                std::transform(command.begin(), command.end(), command.begin(),
+                                [](unsigned char c){return std::toupper(c); });
+                
+                std::string encoded_output;
+
+
+                if (command != "GET" && output.rfind("[ERROR]",0) == 0) {
+                        encoded_output = encodeError(output);
+                }
+                else if (command == "GET") {
+                    if (output == "[ERROR] key not found") {
+                        encoded_output = encodeNil();
+                    }
+                    else if (output.rfind("[ERROR]",0) == 0) {
+                        encoded_output = encodeError(output);
+                    }
+                    else {
+                        encoded_output = encodeBulkString(output);
+                    }
+                }
+                else {
+                    encoded_output = encodeSimpleString(output);
+                }
+
+
+                std::string output_full = encoded_output;
+                int output_len = output_full.length();
+
+                int totalSent = 0;
+
+                while(totalSent < output_len){
+                    int sent = send(
+                    clientSocket,
+                        output_full.c_str() + totalSent,
+                        output_len - totalSent,
+                        0
+                    );
+
+                    if (sent == SOCKET_ERROR) {
+                        std::cout << "Sent Failed\n";
+                        break;
+                    }
+
+                    totalSent += sent;
+                }
             }
 
         }
 
         // Client Cleanup
-
         closesocket(clientSocket);
     }
 
