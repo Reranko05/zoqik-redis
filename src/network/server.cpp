@@ -303,6 +303,8 @@ void Server::start() {
                 0
             );
 
+            std::cout << "[RECV] bytesReceived = " << bytesReceived << '\n';
+
             if (bytesReceived == 0) {
                 std::cout << "Client Disconnected\n";
                 break;
@@ -315,46 +317,97 @@ void Server::start() {
 
             incomingData.append(buffer, bytesReceived);  // append exact received bytes into incomingData string
 
+            std::cout << "[BUFFER SIZE] incomingData = " << incomingData.size() << '\n';
+
+            std::cout << "[RAW]";
+            for (char c : incomingData) {
+                if (c == '\r') std::cout << "\\r";
+                else if (c == '\n') std::cout << "\\n";
+                else std::cout << c;
+            }
+            std::cout << '\n';
+
             while (true) {
 
+                std::cout << "[DRAIN LOOP]" << '\n';
                 int args = 0;
-                int remaining_lines;
+                int length;
                 int byte_count = 0;
+                while (!incomingData.empty() &&
+                        (incomingData[0] == '\r' || incomingData[0] == '\n')) {
+                        incomingData.erase(0, 1);
+}
                 if (incomingData.empty()) {
                     break;
                 }
                 if (incomingData[0] == '*') {
-                    int i = 0;
-                    while (i < incomingData.size() && incomingData[i] != '\r') {
-                        i++;
+                    while (byte_count < incomingData.size() && incomingData[byte_count] != '\n') {
+                        byte_count++;
                     }
-                    if (i == incomingData.size()) {
-                        std::cout << "[ERROR] end not found";
-                        continue;
+                    if (byte_count == incomingData.size()) {
+                        break;
                     }
-                    if (incomingData[i] == '\r') {
-                        args = std::stoi(incomingData.substr(1,i-1));
-                    }
-                }
-
-                remaining_lines = 1 + args*2;
-
-                while (remaining_lines > 0 && byte_count < incomingData.size()) {
                     if (incomingData[byte_count] == '\n') {
-                        remaining_lines--;
+                        std::cout << "[ARG STRING]" << incomingData.substr(1, byte_count - 2);
+                        args = std::stoi(incomingData.substr(1, byte_count - 2));
                     }
-                    byte_count++;
                 }
-                
-                if (remaining_lines != 0) break;
+
+                if (args <= 0) break;
+
+                byte_count++;
+
+                std::cout << "[ARGS]" << args << '\n';
+                std::cout << "[BYTE_COUNT]" << byte_count << '\n';
+                std::cout << "[CURRENT_CHAR]" << incomingData[byte_count] << '\n';
+
+                int remain_args = args;
+                int arg_len;
+
+                while (remain_args > 0) {
+                    if (byte_count < incomingData.size() && incomingData[byte_count] == '$') {
+                        int line_start = byte_count;
+                        while (byte_count < incomingData.size() && incomingData[byte_count] != '\n') {
+                            byte_count++;
+                        }
+                        if (byte_count == incomingData.size()) {
+                            break;
+                        }
+                        if (incomingData[byte_count] == '\n') {
+                            arg_len = std::stoi(incomingData.substr(line_start + 1, byte_count - line_start - 2));
+                        }
+                        byte_count++;
+                        
+                        if (byte_count + arg_len + 2 <= incomingData.size()) {
+                            byte_count += arg_len + 2;
+                            std::cout << "[CURSOR]" << incomingData[byte_count];
+                        }
+                        else {
+                            break;
+                        }
+                        remain_args--;
+                    }
+                    else {
+                        break;
+                    }
+                }
+
+                if (remain_args != 0) break;
+
+                std::cout << "[FRAME FOUND]\n";
+                std::cout << "args = " << args << '\n';
+                std::cout << "byte_count = " << byte_count << '\n';
                 
 
                 std::string full_input(incomingData.substr(0,byte_count));
                 incomingData.erase(0,byte_count);
+
+                std::cout << "[BUFFER REMAINING] " << incomingData.size() << '\n'; 
+
                 std::vector<std::string> tokens = parseRESP(full_input);
 
                 if (tokens.empty()) {
-                    std::cout << "[ERROR] no command found";
+                    std::cout << "[ERROR] no command found\n";
                     break;
                 }
 
@@ -368,8 +421,10 @@ void Server::start() {
                 
                 std::string encoded_output;
 
-
-                if (command != "GET" && output.rfind("[ERROR]",0) == 0) {
+                if (command == "ECHO") {
+                    encoded_output = encodeBulkString(tokens[1]);
+                }
+                else if (command != "GET" && output.rfind("[ERROR]",0) == 0) {
                         encoded_output = encodeError(output);
                 }
                 else if (command == "GET") {
