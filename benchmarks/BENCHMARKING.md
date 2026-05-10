@@ -90,7 +90,7 @@ Workload:
 
 ---
 
-# Current Baseline Results
+# Baseline Results V1
 
 ## SET Benchmark
 
@@ -162,6 +162,117 @@ dominated more by network/protocol overhead
 than cache eviction logic itself.
 
 ---
+# Benchmark Methodology
+
+Benchmarks are executed using Python socket clients.
+
+Each benchmark:
+- establishes a persistent TCP connection
+- sends RESP-formatted commands sequentially
+- waits for server responses
+- measures total elapsed execution time
+
+---
+
+# Baseline Results V2
+
+The current RESP-compatible architecture now includes:
+- incremental TCP stream parsing
+- RESP frame extraction
+- protocol validation
+- RESP response encoding
+- pipelining support
+- partial-send-safe transmission
+- redis-cli interoperability
+
+## Mixed Benchmark
+
+Workload:
+70% GET
+30% SET
+
+Operations:
+100000
+
+Average Time:
+~6.79 sec
+
+Average Throughput:
+~14700 ops/sec
+
+---
+
+## SET Benchmark
+
+Operations:
+100000
+
+Average Time:
+~6.83 sec
+
+Average Throughput:
+~14600 ops/sec
+
+---
+
+## GET Benchmark
+
+Operations:
+100000
+
+Average Time:
+~6.03 sec
+
+Average Throughput:
+~16600 ops/sec
+
+---
+
+# redis-benchmark Results
+
+Command:
+
+```bash
+redis-benchmark -h <server-ip> -p 6379 -t set,get -n 1000 -c 1
+```
+
+---
+
+## SET Benchmark
+
+Operations:
+1000
+
+Average Throughput:
+~3150 req/sec
+
+Average Latency:
+~0.30 ms
+
+---
+
+## GET Benchmark
+
+Operations:
+1000
+
+Average Throughput:
+~3560 req/sec
+
+Average Latency:
+~0.26 ms
+
+---
+
+# Redis Cli Observations
+
+- GET throughput exceeded SET throughput
+- RESP interoperability remained stable
+- latency variance remained low
+- redis-benchmark throughput remained lower than custom Python benchmarks
+
+---
+
 
 # Observations
 
@@ -180,26 +291,6 @@ while GET operations primarily involve:
 
 Benchmark variance across runs remains low,
 indicating stable runtime behavior.
-
----
-
-# Future Benchmark Plans
-
-Planned benchmarks:
-- mixed GET/SET workloads
-- eviction stress tests
-- TTL stress tests
-- concurrent client benchmarks
-- RESP protocol benchmarks
-- pipelining benchmarks
-
-Future optimization experiments:
-- epoll/select networking
-- thread pools
-- parser optimizations
-- custom allocators
-- lock-free structures
-- batching/pipelining
 
 ---
 
