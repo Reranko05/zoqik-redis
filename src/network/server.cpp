@@ -1,175 +1,103 @@
 /*
-    In this file we initialized a TCP socket using Winsock.
+    server.cpp
 
-    socket() created a generic TCP socket with:
-    1. AF_INET      -> IPv4
-    2. SOCK_STREAM  -> TCP
-    3. IPPROTO_TCP  -> TCP Protocol
-
-    Then we configured the server address:
-    - htons() converted the port number into network byte order (big-endian).
-    - inet_pton() converted the human-readable IP address into
-      the binary representation used internally by the OS.
-
-    The server binds to:
-    0.0.0.0:6379
-
-    allowing external clients such as redis-cli
-    and WSL environments to connect.
-
-    bind() assigned ownership of the IP + Port
-    combination to this process.
-
-    listen() transformed the generic TCP socket
-    into a listening socket, allowing the kernel
-    to queue incoming TCP connections.
-
-    accept() retrieved a client connection from
-    the kernel accept queue and returned a new
-    connection socket used for communication
-    with that specific client.
+    This file contains the high-level TCP server orchestration layer.
 
     The server currently uses:
+    - Winsock networking
     - blocking I/O
     - sequential client handling
     - a single-threaded event loop
 
-    so only one client can communicate with
-    the server at a time.
+    The server binds to:
+    0.0.0.0:6379
 
-    recv() copied bytes from the kernel TCP
-    receive buffer into application memory.
+    allowing external TCP clients such as:
+    - redis-cli
+    - WSL clients
+    - custom TCP clients
+
+    --------------------------------------------------
+    NETWORKING FLOW
+    --------------------------------------------------
+
+    1. Initialize Winsock using WSAStartup()
+
+    2. Create a TCP socket using:
+       - AF_INET
+       - SOCK_STREAM
+       - IPPROTO_TCP
+
+    3. Bind the socket to:
+       0.0.0.0:6379
+
+    4. Put the socket into listening mode using listen()
+
+    5. Accept incoming client connections using accept()
+
+    6. Continuously receive TCP stream bytes using recv()
 
     TCP is stream-oriented, meaning:
-    one send() is NOT guaranteed to match one recv().
+    recv() boundaries do NOT correspond to protocol frame boundaries.
 
-    Because of this, we used a persistent
-    stream buffer called incomingData to
-    accumulate bytes across multiple recv() calls.
+    Because of this, the server maintains a persistent
+    stream buffer called incomingData which accumulates
+    bytes across multiple recv() calls.
 
-    incomingData stores:
-    - fragmented partial RESP frames
-    - complete RESP frames
-    - multiple RESP frames arriving together
+    The server repeatedly:
 
-    until they are fully processed.
+    - receives TCP stream bytes
+    - appends received bytes into incomingData
+    - drains all complete RESP frames currently present
+      inside the stream buffer
+    - executes parsed commands
+    - sends encoded RESP responses back to the client
 
-    The server implements incremental RESP
-    stream parsing.
+    The server preserves:
+    - incomplete fragmented frames
+    - unprocessed leftover bytes
+    - pipelined frames arriving together
 
-    RESP requests begin with:
-    *<argument_count>
+    across recv() calls.
 
-    Each RESP argument consists of:
-    - a bulk string length line
-    - an argument payload line
+    --------------------------------------------------
+    EXTERNAL MODULES
+    --------------------------------------------------
 
-    Example:
+    RESP stream framing and complete frame extraction:
+        refer to resp_stream_parser.cpp
 
-    *3
-    $3
-    SET
-    $1
-    a
-    $1
-    1
+    RESP semantic parsing:
+        refer to resp_parser.cpp
 
-    After receiving stream bytes:
-    - the RESP array header is parsed
-    - expected RESP line count is calculated
-    - the stream buffer is scanned until a complete RESP frame exists
+    RESP response encoding:
+        refer to resp_response_encoder.cpp
 
-    Incomplete RESP frames remain buffered
-    inside incomingData until future recv()
-    calls provide the remaining bytes.
+    Reliable full-response TCP transmission:
+        refer to socket_utils.cpp
 
-    This preserves TCP stream correctness
-    under packet fragmentation.
+    Command execution logic:
+        refer to command_handler.cpp
 
-    Once a complete RESP frame is detected:
-    - exact frame bytes are extracted
-    - consumed bytes are erased from incomingData
-    - leftover unprocessed bytes remain buffered
+    Database storage internals:
+        refer to database.cpp
 
-    The server repeatedly drains all complete
-    RESP frames currently present inside
-    incomingData before returning to recv().
+    --------------------------------------------------
+    CLEANUP
+    --------------------------------------------------
 
-    This allows the server to correctly handle:
-    - multiple RESP frames arriving in one recv()
-    - basic pipelined requests
-    - mixed fragmented + complete frame scenarios
+    Client sockets are cleaned up using:
+        closesocket()
 
-    This architecture is called:
-    incremental framed stream parsing.
-
-    Complete RESP frames are passed into:
-    parseRESP()
-
-    which validates RESP structure and converts
-    the protocol frame into:
-    std::vector<std::string> tokens
-
-    representing structured command arguments.
-
-    CommandHandler:
-    - validates commands
-    - maps commands to database operations
-    - executes application logic
-
-    Database provides:
-    - in-memory key-value storage
-    - TTL expiration
-    - LRU eviction
-
-    using:
-    - unordered_map lookups
-    - doubly linked list based LRU tracking
-
-    The server maintains a single shared
-    Database instance, allowing state persistence
-    across multiple commands and client sessions.
-
-    After command execution:
-    - command results are converted into
-      RESP wire-format responses
-
-    using:
-    - encodeSimpleString()
-    - encodeBulkString()
-    - encodeError()
-    - encodeNil()
-
-    GET requests return:
-    - bulk strings for valid values
-    - nil responses for missing keys
-
-    Non-GET successful commands return:
-    RESP simple strings.
-
-    Errors return:
-    RESP error frames.
-
-    send() is not guaranteed to transmit
-    all bytes at once.
-
-    Because of this, a send loop is used with:
-    - totalSent tracking
-    - remaining byte calculation
-    - pointer offset shifting
-
-    to ensure complete response transmission.
-
-    Finally:
-    - client sockets are cleaned up using closesocket()
-    - server socket is closed
-    - Winsock resources are released using WSACleanup()
+    Winsock resources are released using:
+        WSACleanup()
 */
 
 #include "server.h"
-#include "../protocol/command_parser.h"
+#include "socket_utils.h"
+#include "../protocol/resp_stream_parser.h"
+#include "../protocol/resp_response_encoder.h"
 #include "../protocol/resp_parser.h"
-#include "../protocol/resp_encoder.h"
 #include "../core/command_handler.h"
 #include "../storage/database.h"
 
@@ -314,70 +242,9 @@ void Server::start() {
             }
 
             incomingData.append(buffer, bytesReceived);  // append exact received bytes into incomingData string
+            std::string full_input;
 
-            while (true) {
-                int args = 0;
-                int length;
-                int byte_count = 0;
-                while (!incomingData.empty() &&
-                        (incomingData[0] == '\r' || incomingData[0] == '\n')) {
-                        incomingData.erase(0, 1);
-}
-                if (incomingData.empty()) {
-                    break;
-                }
-                if (incomingData[0] == '*') {
-                    while (byte_count < incomingData.size() && incomingData[byte_count] != '\n') {
-                        byte_count++;
-                    }
-                    if (byte_count == incomingData.size()) {
-                        break;
-                    }
-                    if (incomingData[byte_count] == '\n') {
-                        args = std::stoi(incomingData.substr(1, byte_count - 2));
-                    }
-                }
-
-                if (args <= 0) break;
-
-                byte_count++;
-
-                int remain_args = args;
-                int arg_len;
-
-                while (remain_args > 0) {
-                    if (byte_count < incomingData.size() && incomingData[byte_count] == '$') {
-                        int line_start = byte_count;
-                        while (byte_count < incomingData.size() && incomingData[byte_count] != '\n') {
-                            byte_count++;
-                        }
-                        if (byte_count == incomingData.size()) {
-                            break;
-                        }
-                        if (incomingData[byte_count] == '\n') {
-                            arg_len = std::stoi(incomingData.substr(line_start + 1, byte_count - line_start - 2));
-                        }
-                        byte_count++;
-                        
-                        if (byte_count + arg_len + 2 <= incomingData.size()) {
-                            byte_count += arg_len + 2;
-                        }
-                        else {
-                            break;
-                        }
-                        remain_args--;
-                    }
-                    else {
-                        break;
-                    }
-                }
-
-                if (remain_args != 0) break;
-
-                std::cout << "[FRAME FOUND]\n";
-                
-                std::string full_input(incomingData.substr(0,byte_count));
-                incomingData.erase(0,byte_count);
+            while (extractRESPFrame(incomingData, full_input)) {
 
                 std::vector<std::string> tokens = parseRESP(full_input);
 
@@ -394,50 +261,10 @@ void Server::start() {
                 std::transform(command.begin(), command.end(), command.begin(),
                                 [](unsigned char c){return std::toupper(c); });
                 
-                std::string encoded_output;
+                
+                std::string encoded_output = encodeResponse(command, output, tokens);
 
-                if (command == "ECHO") {
-                    encoded_output = encodeBulkString(tokens[1]);
-                }
-                else if (command != "GET" && output.rfind("[ERROR]",0) == 0) {
-                        encoded_output = encodeError(output);
-                }
-                else if (command == "GET") {
-                    if (output == "[ERROR] key not found") {
-                        encoded_output = encodeNil();
-                    }
-                    else if (output.rfind("[ERROR]",0) == 0) {
-                        encoded_output = encodeError(output);
-                    }
-                    else {
-                        encoded_output = encodeBulkString(output);
-                    }
-                }
-                else {
-                    encoded_output = encodeSimpleString(output);
-                }
-
-
-                std::string output_full = encoded_output;
-                int output_len = output_full.length();
-
-                int totalSent = 0;
-
-                while(totalSent < output_len){
-                    int sent = send(
-                    clientSocket,
-                        output_full.c_str() + totalSent,
-                        output_len - totalSent,
-                        0
-                    );
-
-                    if (sent == SOCKET_ERROR) {
-                        std::cout << "Sent Failed\n";
-                        break;
-                    }
-
-                    totalSent += sent;
-                }
+                sendAll(clientSocket, encoded_output);
             }
 
         }
