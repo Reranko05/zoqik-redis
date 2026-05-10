@@ -211,6 +211,8 @@ void Database::del(const std::string& key) {
 
 }
 
+// LRU Management
+
 void Database::insertFront(Node* node) {
     Node* dummy = head;
     Node* temp = dummy->next;
