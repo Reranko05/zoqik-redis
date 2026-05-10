@@ -29,7 +29,7 @@
     connection socket used for communication
     with that specific client.
 
-    The server uses:
+    The server currently uses:
     - blocking I/O
     - sequential client handling
     - a single-threaded event loop
@@ -87,11 +87,21 @@
     under packet fragmentation.
 
     Once a complete RESP frame is detected:
-    - exact consumed bytes are extracted
+    - exact frame bytes are extracted
     - consumed bytes are erased from incomingData
     - leftover unprocessed bytes remain buffered
 
-    This is incremental framed stream parsing.
+    The server repeatedly drains all complete
+    RESP frames currently present inside
+    incomingData before returning to recv().
+
+    This allows the server to correctly handle:
+    - multiple RESP frames arriving in one recv()
+    - basic pipelined requests
+    - mixed fragmented + complete frame scenarios
+
+    This architecture is called:
+    incremental framed stream parsing.
 
     Complete RESP frames are passed into:
     parseRESP()
