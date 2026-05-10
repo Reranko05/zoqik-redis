@@ -1,3 +1,93 @@
+/*
+    resp_parser.cpp
+
+    This file contains RESP semantic parsing logic.
+
+    --------------------------------------------------
+    RESPONSIBILITY
+    --------------------------------------------------
+
+    parseRESP() validates RESP request structure
+    and converts a complete RESP frame into:
+
+        std::vector<std::string>
+
+    representing structured command arguments.
+
+    This module operates only on:
+    - complete RESP frames
+
+    and does NOT handle:
+    - TCP stream buffering
+    - fragmented frame assembly
+    - frame boundary extraction
+
+    refer to:
+        resp_stream_parser.cpp
+
+    --------------------------------------------------
+    RESP PARSING FLOW
+    --------------------------------------------------
+
+    1. The RESP frame is split into
+       individual protocol lines
+
+    2. CRLF terminators are removed
+
+    3. The RESP array header:
+
+        *<argument_count>
+
+       is parsed to determine expected
+       argument count
+
+    4. Each bulk string entry:
+
+        $<length>
+
+       is validated and parsed
+
+    5. Bulk string payloads are extracted
+       into command argument tokens
+
+    --------------------------------------------------
+    VALIDATION
+    --------------------------------------------------
+
+    The parser validates:
+    - RESP array header existence
+    - bulk string argument structure
+    - argument count consistency
+    - payload length correctness
+    - sufficient argument availability
+
+    Invalid RESP structures return:
+        {}
+
+    indicating semantic parsing failure.
+
+    --------------------------------------------------
+    OUTPUT
+    --------------------------------------------------
+
+    Successful parsing produces:
+
+        {"SET", "a", "1"}
+
+    style command token vectors which are
+    later passed into command execution logic.
+
+    --------------------------------------------------
+    EXTERNAL MODULES
+    --------------------------------------------------
+
+    Parsed command tokens are later processed by:
+        CommandHandler
+
+    refer to:
+        command_handler.cpp
+*/
+
 #include "resp_parser.h"
 
 #include <iostream>
