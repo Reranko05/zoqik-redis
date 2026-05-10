@@ -9,23 +9,37 @@ TOTAL_OPS = 100000
 s = socket.socket()
 s.connect((HOST, PORT))
 
-print("Preloading keys...")
+#print("Preloading keys...")
 
 for i in range(TOTAL_OPS):
 
-    cmd = f"SET key{i} value{i}\n"
+    key = f"key{i}"
+    value = f"value{i}"
+
+    cmd = (
+        f"*3\r\n"
+        f"$3\r\nSET\r\n"
+        f"${len(key)}\r\n{key}\r\n"
+        f"${len(value)}\r\n{value}\r\n"
+    )
 
     s.send(cmd.encode())
 
     s.recv(128)
 
-print("Starting GET benchmark...")
+#print("Starting GET benchmark...")
 
 start = time.perf_counter()
 
 for i in range(TOTAL_OPS):
 
-    cmd = f"GET key{i}\n"
+    key = f"key{i}"
+
+    cmd = (
+        f"*2\r\n"
+        f"$3\r\nGET\r\n"
+        f"${len(key)}\r\n{key}\r\n"
+    )
 
     s.send(cmd.encode())
 

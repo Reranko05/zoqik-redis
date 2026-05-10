@@ -13,7 +13,10 @@ start = time.perf_counter()
 
 for i in range(TOTAL_OPS):
 
-    cmd = f"SET key{i} value{i}\n"
+    key = f"key{i}"
+    value = f"value{i}"
+
+    cmd = f"*3\r\n$3\r\nSET\r\n${len(key)}\r\n{key}\r\n${len(value)}\r\n{value}\r\n"
 
     s.send(cmd.encode())
 

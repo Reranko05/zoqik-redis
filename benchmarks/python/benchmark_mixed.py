@@ -6,23 +6,30 @@ HOST = "127.0.0.1"
 PORT = 6379
 
 TOTAL_OPS = 100000
+PRELOAD_KEYS = 50000
 
 s = socket.socket()
 s.connect((HOST, PORT))
 
-print("Preloading keys...")
-
-PRELOAD_KEYS = 50000
+#print("Preloading keys...")
 
 for i in range(PRELOAD_KEYS):
 
-    cmd = f"SET key{i} value{i}\n"
+    key = f"key{i}"
+    value = f"value{i}"
+
+    cmd = (
+        f"*3\r\n"
+        f"$3\r\nSET\r\n"
+        f"${len(key)}\r\n{key}\r\n"
+        f"${len(value)}\r\n{value}\r\n"
+    )
 
     s.send(cmd.encode())
 
     s.recv(128)
 
-print("Starting mixed benchmark...")
+#print("Starting mixed benchmark...")
 
 start = time.perf_counter()
 
@@ -35,12 +42,26 @@ for i in range(TOTAL_OPS):
 
         key_id = random.randint(0, PRELOAD_KEYS - 1)
 
-        cmd = f"GET key{key_id}\n"
+        key = f"key{key_id}"
+
+        cmd = (
+            f"*2\r\n"
+            f"$3\r\nGET\r\n"
+            f"${len(key)}\r\n{key}\r\n"
+        )
 
     # 30% SET workload
     else:
 
-        cmd = f"SET mixed{i} value{i}\n"
+        key = f"mixed{i}"
+        value = f"value{i}"
+
+        cmd = (
+            f"*3\r\n"
+            f"$3\r\nSET\r\n"
+            f"${len(key)}\r\n{key}\r\n"
+            f"${len(value)}\r\n{value}\r\n"
+        )
 
     s.send(cmd.encode())
 
