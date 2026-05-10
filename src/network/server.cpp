@@ -303,8 +303,6 @@ void Server::start() {
                 0
             );
 
-            std::cout << "[RECV] bytesReceived = " << bytesReceived << '\n';
-
             if (bytesReceived == 0) {
                 std::cout << "Client Disconnected\n";
                 break;
@@ -317,19 +315,7 @@ void Server::start() {
 
             incomingData.append(buffer, bytesReceived);  // append exact received bytes into incomingData string
 
-            std::cout << "[BUFFER SIZE] incomingData = " << incomingData.size() << '\n';
-
-            std::cout << "[RAW]";
-            for (char c : incomingData) {
-                if (c == '\r') std::cout << "\\r";
-                else if (c == '\n') std::cout << "\\n";
-                else std::cout << c;
-            }
-            std::cout << '\n';
-
             while (true) {
-
-                std::cout << "[DRAIN LOOP]" << '\n';
                 int args = 0;
                 int length;
                 int byte_count = 0;
@@ -348,7 +334,6 @@ void Server::start() {
                         break;
                     }
                     if (incomingData[byte_count] == '\n') {
-                        std::cout << "[ARG STRING]" << incomingData.substr(1, byte_count - 2);
                         args = std::stoi(incomingData.substr(1, byte_count - 2));
                     }
                 }
@@ -356,10 +341,6 @@ void Server::start() {
                 if (args <= 0) break;
 
                 byte_count++;
-
-                std::cout << "[ARGS]" << args << '\n';
-                std::cout << "[BYTE_COUNT]" << byte_count << '\n';
-                std::cout << "[CURRENT_CHAR]" << incomingData[byte_count] << '\n';
 
                 int remain_args = args;
                 int arg_len;
@@ -380,7 +361,6 @@ void Server::start() {
                         
                         if (byte_count + arg_len + 2 <= incomingData.size()) {
                             byte_count += arg_len + 2;
-                            std::cout << "[CURSOR]" << incomingData[byte_count];
                         }
                         else {
                             break;
@@ -395,14 +375,9 @@ void Server::start() {
                 if (remain_args != 0) break;
 
                 std::cout << "[FRAME FOUND]\n";
-                std::cout << "args = " << args << '\n';
-                std::cout << "byte_count = " << byte_count << '\n';
                 
-
                 std::string full_input(incomingData.substr(0,byte_count));
                 incomingData.erase(0,byte_count);
-
-                std::cout << "[BUFFER REMAINING] " << incomingData.size() << '\n'; 
 
                 std::vector<std::string> tokens = parseRESP(full_input);
 
