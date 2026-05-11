@@ -301,4 +301,3 @@ Benchmarks should be executed with:
 - identical workloads
 - identical capacity settings
 
-to maintain result consistency and comparability.
